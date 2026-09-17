@@ -1,0 +1,9 @@
+# Stage 1: silence_detect + build_draft
+pycapcut>=0.0.3
+pymediainfo>=7.0.1
+
+# Stage 2+ (FastAPI 웹 UI, Whisper 자막) 에서 추가 예정:
+# fastapi
+# uvicorn[standard]
+# mlx-whisper      # Mac Apple Silicon 트랙 A
+# faster-whisper   # Windows/그 외 fallback 트랙
