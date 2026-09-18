@@ -2,8 +2,8 @@
 
 한국어 토킹 영상 자동 편집기. mp4/mov를 넣으면 무음·잔말·NG 컷과 단어별 자막이
 반영된 CapCut 드래프트를 만들어준다. FastAPI + 정적 HTML로 동작하는 로컬 웹
-도구로 완성할 예정이며, 지금은 **Stage 1 (무음 감지 + 점프컷 드래프트 생성,
-UI 없음)** 까지 구현되어 있다.
+도구로 완성할 예정이며, 지금은 **Stage 2 (FastAPI + 정적 HTML, drag/drop + SSE
+스테퍼)** 까지 구현되어 있다. Stage 1의 CLI도 그대로 남아있다.
 
 > **검증 = 사용자가 CapCut에서 직접 재생.** 이 스크립트가 에러 없이 끝났다는 것은
 > "빌드 성공"일 뿐, "검증 완료"가 아니다. 아래 각 단계를 실행한 뒤 반드시 CapCut
@@ -97,6 +97,34 @@ python -m capcut_agent.cli \
 
 이 체크리스트를 통과해야 Stage 2(FastAPI + 웹 UI)로 넘어간다.
 
+## Stage 2: 로컬 웹 UI (drag/drop + SSE 스테퍼)
+
+Stage 1의 파이프라인을 그대로 감싸는 FastAPI 서버 + 정적 HTML 1장이다.
+CLI와 결과가 동일하다 (내부적으로 같은 `silence_detect`/`build_draft` 함수 호출).
+
+```bash
+source .venv/bin/activate  # 아직 안 했다면
+python -m capcut_agent.server
+```
+
+브라우저가 자동으로 `http://127.0.0.1:8420` 을 연다 (안 열리면 직접 접속).
+
+사용 흐름:
+1. mp4/mov 파일을 드롭존에 끌어놓거나 클릭해서 선택
+2. 드래프트 이름 확인(파일명 기반 자동 채움), 드래프트 폴더는 OS별 추정 경로가
+   자동으로 채워진다 (틀렸다면 직접 수정). "고급 설정"에서 CLI와 동일한
+   `--noise`/`--min-silence`/`--padding`/`--min-speech` 값을 조정 가능
+3. "드래프트 생성 시작" → 업로드 → 무음 분석 → 드래프트 생성 단계가 SSE로
+   실시간 표시됨
+4. 완료 후 통계(원본/최종 길이, 컷 수)와 드래프트 경로 확인 → **CapCut에서
+   직접 재생해 검증** (Stage 1과 동일한 검증 체크리스트 적용)
+
+⚠️ **업로드 사본은 지우면 안 된다.** 드롭한 파일은 서버가 `~/.capcut-agent/uploads/`
+에 복사본을 저장하고, 생성된 CapCut 드래프트는 원본이 아니라 **이 복사본의
+경로**를 참조한다 (브라우저가 보안상 드래그한 파일의 실제 로컬 경로를 알려주지
+않기 때문에 업로드가 불가피함). 이 폴더의 파일을 지우면 CapCut에서 "미디어
+오프라인"이 뜬다. 편집이 끝나 최종 렌더링까지 마친 뒤에만 정리할 것.
+
 ## 알려진 함정 (pycapcut 기준, 리버스엔지니어링으로 확인)
 
 - **시간 단위**: `draft_content.json`의 모든 timerange는 마이크로초. `pycapcut`의
@@ -122,18 +150,31 @@ python -m capcut_agent.cli \
   자체 자동 자막 기능을 켜지 않는다.
 - **macOS 샌드박스/권한**: 터미널이 `~/Movies` 하위 CapCut 폴더에 쓰기 권한이 없으면
   `PermissionError`가 조용히 나거나 폴더가 안 만들어질 수 있다. Step 0의 권한 안내 참고.
+- **웹 업로드 사본이 곧 소스**: 브라우저는 보안상 드래그한 파일의 실제 경로를 주지
+  않으므로 서버로 업로드(복사)할 수밖에 없다. 이 복사본이 CapCut 드래프트가
+  참조하는 실제 미디어 경로가 되므로, OS 임시 폴더가 아니라 영속 디렉토리
+  (`~/.capcut-agent/uploads/`)에 저장하고 자동 삭제하지 않는다 (`jobs.py` 참고).
+- **pycapcut 예외는 중국어 원문**: 라이브러리 작성자가 중국어 사용자라 `FileExistsError`
+  등의 메시지가 중국어로 온다 (예: `"草稿文件夹 ... 已存在..."`). 사용자에게 그대로
+  보여주지 말고 알려진 예외는 경계(`build_draft.py`)에서 한국어로 번역해 다시 던진다.
 
 ## 로드맵
 
-- [x] Stage 1: `silence_detect` + `build_draft` → 점프컷 드래프트 (본 저장소, UI 없음)
-- [ ] Stage 2: FastAPI + 정적 HTML 1장 (drag/drop 업로드 + SSE 진행 단계 표시)
+- [x] Stage 1: `silence_detect` + `build_draft` → 점프컷 드래프트 (CLI, UI 없음)
+- [x] Stage 2: FastAPI + 정적 HTML 1장 (drag/drop 업로드 + SSE 진행 단계 표시)
 - [ ] Stage 3: mlx-whisper(Mac) / faster-whisper(fallback) 로 전체 대본(세그먼트+단어)
       추출 → 세그먼트 단위 자막 생성. **전체 대본을 먼저 뽑고, 그걸로 NG/자막을
-      판단한다 (단어 단위로 그때그때 판단하지 않음)**
+      판단한다 (단어 단위로 그때그때 판단하지 않음)**. ASR은 `jobs.ASR_LOCK`으로
+      직렬화 필요 (mlx/numba 계열 동시 호출 시 segfault 위험), 캐시는 파일 mtime이
+      아니라 content hash 기준으로 (매 업로드마다 mtime이 바뀌어 캐시 miss남)
 - [ ] Stage 4: 전체 대본 기반 잔말(음/어/그니까 등)·NG 컷 통합, 결과 카드에 transcript 노출
 - [ ] Stage 5: 영상 프리뷰 + `[`/`]` 단축키로 보존 구간 수동 마킹
 
-## 디자인 톤 (Stage 2+ 예정)
+## 디자인 톤
 
-자막 스타일/폰트/무드는 참고 영상(사용자 제공 링크)과 동일하게 맞출 예정.
-Stage 2에서 정적 HTML 프리뷰 UI를 만들 때 함께 반영한다.
+Linear/Vercel/Notion 스타일의 모노스페이스 UI. 다크 `#0a0a0a` + 카드 `#161616`,
+액센트는 그린 `#22c55e` 한 가지만 사용 (그라데이션·다색 액센트 없음). 숫자는
+`tabular-nums`로 정렬. 상태 표시는 큰 체크마크 대신 6px 점 + 글로우, 통계는
+3컬럼 그리드, 구분선은 1px `hr`, 경로/코드 값은 모노스페이스 "코드 칩"으로
+표시한다 (`capcut_agent/static/index.html` 참고). 참고 영상의 자막 스타일/폰트는
+Stage 3에서 자막 렌더링을 붙일 때 반영 예정.

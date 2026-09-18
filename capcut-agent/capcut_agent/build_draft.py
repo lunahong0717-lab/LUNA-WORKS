@@ -70,10 +70,18 @@ def build_jumpcut_draft(
     detected_fps = fps if fps is not None else probe_fps(video_path)
 
     folder = DraftFolder(draft_folder)
-    script: ScriptFile = folder.create_draft(
-        draft_name, material.width, material.height, detected_fps,
-        allow_replace=allow_replace,
-    )
+    try:
+        script: ScriptFile = folder.create_draft(
+            draft_name, material.width, material.height, detected_fps,
+            allow_replace=allow_replace,
+        )
+    except FileExistsError:
+        # pycapcut은 중국어 원문 예외 메시지를 던진다 (예: "草稿文件夹 ... 已存在...").
+        # 한국어 사용자에게 그대로 노출하지 않도록 여기서 번역해 다시 던진다.
+        raise FileExistsError(
+            f"이미 '{draft_name}' 이름의 드래프트가 존재합니다. "
+            f"다른 이름을 쓰거나 덮어쓰기를 허용해주세요."
+        )
     script.add_track(TrackType.video)
 
     cursor_us = 0

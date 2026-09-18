@@ -85,7 +85,7 @@ def main(argv=None) -> int:
             allow_replace=args.allow_replace,
         )
     except FileExistsError as e:
-        print(f"[오류] {e} (--allow-replace 로 덮어쓸 수 있습니다)", file=sys.stderr)
+        print(f"[오류] {e}", file=sys.stderr)
         return 1
 
     print(f"\n드래프트 생성 완료: {result.draft_path}")
